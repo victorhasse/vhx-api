@@ -1,0 +1,13 @@
+# Dependências
+node_modules/
+
+# Variáveis de ambiente (NUNCA commitar)
+.env
+.env.local
+
+# Sistema operacional
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
