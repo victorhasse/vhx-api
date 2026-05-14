@@ -1,3 +1,4 @@
+import { Op } from 'sequelize'
 import Product from '../models/Product.js'
 
 export async function getAll(req, res) {
@@ -5,7 +6,7 @@ export async function getAll(req, res) {
     const { category, search } = req.query
     const where = { active: true }
     if (category) where.category = category
-    if (search) where.name = { [Symbol.for('like')]: `%${search}%` }
+    if (search)   where.name = { [Op.like]: `%${search}%` }
 
     const products = await Product.findAll({ where, order: [['createdAt', 'DESC']] })
     return res.json(products)
