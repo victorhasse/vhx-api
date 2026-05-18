@@ -1,10 +1,11 @@
 import { Router } from 'express'
+import { createOrder, getMyOrders, getOrderById } from '../controllers/orderController.js'
 import { authMiddleware } from '../middleware/auth.js'
 
 const router = Router()
 
-router.get('/', authMiddleware, (req, res) => {
-  res.json({ message: 'Orders — em breve' })
-})
+router.post('/',     authMiddleware, createOrder)
+router.get('/',      authMiddleware, getMyOrders)
+router.get('/:id',   authMiddleware, getOrderById)
 
 export default router
