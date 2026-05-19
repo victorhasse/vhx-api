@@ -6,6 +6,7 @@ import { connectDB } from './src/database/connection.js'
 import productRoutes from './src/routes/products.js'
 import authRoutes    from './src/routes/auth.js'
 import orderRoutes   from './src/routes/orders.js'
+import paymentRoutes from './src/routes/payments.js'
 
 dotenv.config()
 
@@ -25,7 +26,7 @@ app.use(express.json())
 app.use('/api/products', productRoutes)
 app.use('/api/auth',     authRoutes)
 app.use('/api/orders',   orderRoutes)
-
+app.use('/api/payments', paymentRoutes)
 app.get('/api/health', (req, res) => {
   res.json({ status: 'VHX API rodando ✅', version: '1.0.0' })
 })
