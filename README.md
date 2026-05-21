@@ -7,6 +7,7 @@ REST API for the VHX Store e-commerce, developed as a portfolio project.
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-4169E1?logo=postgresql&logoColor=white&style=flat-square)
 ![MySQL](https://img.shields.io/badge/MySQL-9-4479A1?logo=mysql&logoColor=white&style=flat-square)
 ![JWT](https://img.shields.io/badge/JWT-Auth-000000?logo=jsonwebtokens&logoColor=white&style=flat-square)
+![Stripe](https://img.shields.io/badge/Stripe-Sandbox-635BFF?logo=stripe&logoColor=white&style=flat-square)
 
 <p align="center">
   🇺🇸 English | <a href="docs/README_PT.md">🇧🇷 Português</a>
@@ -26,6 +27,7 @@ REST API for the VHX Store e-commerce, developed as a portfolio project.
 | PostgreSQL (Neon) | Production database |
 | MySQL | Development database |
 | JWT + bcryptjs | Auth and passwords hashing |
+| Stripe | Payment processing (sandbox) |
 | CORS + dotenv | Security and configs|
 
 ## 📡 Endpoints
@@ -45,6 +47,19 @@ REST API for the VHX Store e-commerce, developed as a portfolio project.
 | POST | `/api/products` | Create product (admin) |
 | PUT | `/api/products/:id` | Update product (admin) |
 | DELETE | `/api/products/:id` | Delete product (admin) |
+
+### Orders
+| Method | Route | Description |
+|---|---|---|
+| POST | `/api/orders` | Create order |
+| GET | `/api/orders` | List user orders |
+| GET | `/api/orders/:id` | Get order by ID |
+
+### Payments
+| Method | Route | Description |
+|---|---|---|
+| POST | `/api/payments/create-intent` | Create Stripe PaymentIntent |
+| POST | `/api/payments/confirm` | Confirm order after payment |
 
 ### Health Check
 | Method | Route | Description |
@@ -87,17 +102,19 @@ DB_PASS=your_password
 
 JWT_SECRET=your_secret
 JWT_EXPIRES_IN=7d
+
+STRIPE_SECRET_KEY=sk_test_your_key_here
 ```
 
 ## 📁 Project Structure
 
 ```
 src/
-├── controllers/       # authController, productController
-├── database/          # Sequelize Connection
+├── controllers/       # authController, productController, orderController, paymentController
+├── database/          # Sequelize connection (MySQL + PostgreSQL)
 ├── middleware/        # authMiddleware, adminMiddleware
-├── models/            # User, Product, Order
-└── routes/            # auth, products, orders
+├── models/            # User, Product, Order, OrderItem
+└── routes/            # auth, products, orders, payments
 ```
 
 ## 🌐 Deploy
