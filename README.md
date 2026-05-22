@@ -1,3 +1,7 @@
+<div align="center">
+
+<img width="200" height="200" alt="favicon" src="https://github.com/user-attachments/assets/3b896291-a76e-4e08-a7ad-8d2b93f4cfc9" />
+
 # &lt;VHX&gt; API — Backend
 
 REST API for the VHX Store e-commerce, developed as a portfolio project.
@@ -8,6 +12,7 @@ REST API for the VHX Store e-commerce, developed as a portfolio project.
 ![MySQL](https://img.shields.io/badge/MySQL-9-4479A1?logo=mysql&logoColor=white&style=flat-square)
 ![JWT](https://img.shields.io/badge/JWT-Auth-000000?logo=jsonwebtokens&logoColor=white&style=flat-square)
 ![Stripe](https://img.shields.io/badge/Stripe-Sandbox-635BFF?logo=stripe&logoColor=white&style=flat-square)
+</div>
 
 <p align="center">
   🇺🇸 English | <a href="docs/README_PT.md">🇧🇷 Português</a>
