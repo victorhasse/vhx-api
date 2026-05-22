@@ -1,3 +1,7 @@
+<div align="center">
+
+<img width="200" height="200" alt="favicon" src="https://github.com/user-attachments/assets/3b896291-a76e-4e08-a7ad-8d2b93f4cfc9" />
+
 # &lt;VHX&gt; API — Backend
 
 API REST do e-commerce VHX Store, desenvolvida como projeto de portfólio.
@@ -7,6 +11,8 @@ API REST do e-commerce VHX Store, desenvolvida como projeto de portfólio.
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-4169E1?logo=postgresql&logoColor=white&style=flat-square)
 ![MySQL](https://img.shields.io/badge/MySQL-9-4479A1?logo=mysql&logoColor=white&style=flat-square)
 ![JWT](https://img.shields.io/badge/JWT-Auth-000000?logo=jsonwebtokens&logoColor=white&style=flat-square)
+![Stripe](https://img.shields.io/badge/Stripe-Sandbox-635BFF?logo=stripe&logoColor=white&style=flat-square)
+</div>
 
 <p align="center">
   <a href="../README.md">🇺🇸 English</a> | 🇧🇷 Português
@@ -26,6 +32,7 @@ API REST do e-commerce VHX Store, desenvolvida como projeto de portfólio.
 | PostgreSQL (Neon) | Banco em produção |
 | MySQL | Banco em desenvolvimento |
 | JWT + bcryptjs | Autenticação e hash de senha |
+| Stripe | Processamento de Pagamentos (sandbox) |
 | CORS + dotenv | Segurança e configuração |
 
 ## 📡 Endpoints
@@ -45,6 +52,19 @@ API REST do e-commerce VHX Store, desenvolvida como projeto de portfólio.
 | POST | `/api/products` | Criar produto (admin) |
 | PUT | `/api/products/:id` | Atualizar produto (admin) |
 | DELETE | `/api/products/:id` | Remover produto (admin) |
+
+### Pedidos
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/api/orders` | Criar pedido |
+| GET | `/api/orders` | Listar pedidos do usuário |
+| GET | `/api/orders/:id` | Pegar pedidos por ID |
+
+### Payments
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/api/payments/create-intent` | Criar Stripe PaymentIntent |
+| POST | `/api/payments/confirm` | Confirmar pedidos depois do pagamento |
 
 ### Health Check
 | Método | Rota | Descrição |
@@ -87,17 +107,19 @@ DB_PASS=sua_senha
 
 JWT_SECRET=seu_secret
 JWT_EXPIRES_IN=7d
+
+STRIPE_SECRET_KEY=sk_teste_sua_chave_aqui
 ```
 
 ## 📁 Estrutura do Projeto
 
 ```
 src/
-├── controllers/       # authController, productController
-├── database/          # Conexão Sequelize
+├── controllers/       # authController, productController, orderController, paymentController
+├── database/          # Conexão Sequelize (MySQL + PostgreSQL)
 ├── middleware/        # authMiddleware, adminMiddleware
-├── models/            # User, Product, Order
-└── routes/            # auth, products, orders
+├── models/            # User, Product, Order, OrderItem
+└── routes/            # auth, products, orders, payments
 ```
 
 ## 🌐 Deploy
