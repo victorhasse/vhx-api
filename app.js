@@ -2,7 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import { connectDB } from './src/database/connection.js'
-
+import webhookRoutes from './src/routes/webhooks.js'
 import productRoutes from './src/routes/products.js'
 import authRoutes    from './src/routes/auth.js'
 import orderRoutes   from './src/routes/orders.js'
@@ -21,6 +21,18 @@ app.use(cors({
   ],
   credentials: true,
 }))
+/*
+ * O webhook precisa receber o corpo original.
+ * Esta rota deve ficar antes de express.json().
+ */
+app.use(
+  '/api/webhooks',
+  express.raw({
+    type: 'application/json',
+  }),
+  webhookRoutes
+)
+
 app.use(express.json())
 
 app.use('/api/products', productRoutes)
