@@ -17,6 +17,11 @@ const Order = sequelize.define('Order', {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false,
   },
+  payment_intent_id: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    unique: true,
+  },
   status: {
     type: DataTypes.ENUM('pending', 'confirmed', 'shipped', 'delivered', 'cancelled'),
     defaultValue: 'pending',
