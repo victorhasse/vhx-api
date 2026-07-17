@@ -26,10 +26,8 @@ export async function connectDB() {
   try {
     await sequelize.authenticate()
     console.log('✅ Banco conectado com sucesso')
-    await sequelize.sync({ alter: true })
-    console.log('✅ Tabelas sincronizadas')
-  } catch (err) {
-    console.error('❌ Erro ao conectar no banco:', err.message)
+  } catch (error) {
+    console.error('❌ Erro ao conectar no banco:', error.message)
     process.exit(1)
   }
 }
