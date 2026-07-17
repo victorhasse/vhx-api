@@ -356,3 +356,86 @@ export async function confirmPayment(req, res) {
     })
   }
 }
+
+export async function cancelPayment(req, res) {
+  try {
+    const { orderId } = req.body
+
+    if (!orderId) {
+      return res.status(400).json({
+        error: 'Pedido não informado',
+      })
+    }
+
+    const order = await Order.findOne({
+      where: {
+        id: orderId,
+        user_id: req.user.id,
+      },
+    })
+
+    if (!order) {
+      return res.status(404).json({
+        error: 'Pedido não encontrado',
+      })
+    }
+
+    if (!order.payment_intent_id) {
+      return res.status(400).json({
+        error: 'Pagamento não vinculado ao pedido',
+      })
+    }
+
+    if (order.status === 'confirmed') {
+      return res.status(409).json({
+        error:
+          'Um pedido confirmado não pode ser cancelado por esta operação',
+      })
+    }
+
+    if (order.status === 'cancelled') {
+      return res.json({
+        success: true,
+        order,
+      })
+    }
+
+    const paymentIntent =
+      await stripe.paymentIntents.retrieve(
+        order.payment_intent_id
+      )
+
+    if (paymentIntent.status === 'succeeded') {
+      return res.status(409).json({
+        error:
+          'O pagamento já foi concluído',
+      })
+    }
+
+    if (paymentIntent.status !== 'canceled') {
+      await stripe.paymentIntents.cancel(
+        paymentIntent.id
+      )
+    }
+
+    /*
+     * O webhook payment_intent.canceled
+     * atualizará o pedido e devolverá o estoque.
+     */
+    return res.json({
+      success: true,
+      message:
+        'Cancelamento solicitado ao Stripe',
+    })
+  } catch (error) {
+    console.error(
+      'Erro ao cancelar pagamento:',
+      error
+    )
+
+    return res.status(500).json({
+      error:
+        'Não foi possível cancelar o pagamento',
+    })
+  }
+}
