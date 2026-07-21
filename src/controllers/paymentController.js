@@ -5,11 +5,14 @@ import sequelize from '../database/connection.js'
 import Order from '../models/Order.js'
 import OrderItem from '../models/OrderItem.js'
 import Product from '../models/Product.js'
+import ProductColor from '../models/ProductColor.js'
+import ProductVariant from '../models/ProductVariant.js'
 
 import {
   convertPriceToCents,
   createRequestError,
   groupQuantitiesByProduct,
+  groupQuantitiesByVariant,
   normalizeRequestedItems,
 } from '../services/checkoutService.js'
 
@@ -33,11 +36,6 @@ export async function createPaymentIntent(req, res) {
 
     const result = await sequelize.transaction(
       async transaction => {
-        /*
-         * Bloqueia os produtos durante a transação.
-         * Isso reduz o risco de duas compras utilizarem
-         * o mesmo estoque ao mesmo tempo.
-         */
         const products = await Product.findAll({
           where: {
             id: {
@@ -57,41 +55,201 @@ export async function createPaymentIntent(req, res) {
 
         const productsById = new Map(
           products.map(product => [
-            product.id,
+            Number(product.id),
             product,
           ])
         )
 
-        const quantitiesByProduct =
-          groupQuantitiesByProduct(requestedItems)
+        /*
+         * Carrega e bloqueia todas as variantes ativas
+         * dos produtos presentes no carrinho.
+         */
+        const variants =
+          await ProductVariant.findAll({
+            where: {
+              product_id: {
+                [Op.in]: productIds,
+              },
+              active: true,
+            },
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+          })
 
+        const variantsById = new Map(
+          variants.map(variant => [
+            Number(variant.id),
+            variant,
+          ])
+        )
+
+        const productsWithVariants = new Set(
+          variants.map(variant =>
+            Number(variant.product_id)
+          )
+        )
+
+        /*
+         * Produtos que possuem variantes exigem
+         * uma variante válida no carrinho.
+         */
+        for (const item of requestedItems) {
+          if (
+            productsWithVariants.has(item.productId) &&
+            !item.variantId
+          ) {
+            const product =
+              productsById.get(item.productId)
+
+            throw createRequestError(
+              `Selecione uma opção para o produto "${product.name}"`
+            )
+          }
+
+          if (item.variantId) {
+            const variant =
+              variantsById.get(item.variantId)
+
+            if (
+              !variant ||
+              Number(variant.product_id) !==
+                item.productId
+            ) {
+              throw createRequestError(
+                'Uma ou mais variantes não estão disponíveis'
+              )
+            }
+          }
+        }
+
+        const legacyItems =
+          requestedItems.filter(
+            item => !item.variantId
+          )
+
+        const quantitiesByProduct =
+          groupQuantitiesByProduct(legacyItems)
+
+        const quantitiesByVariant =
+          groupQuantitiesByVariant(requestedItems)
+
+        /*
+         * Valida o estoque legado somente para
+         * produtos que não possuem variantes.
+         */
         for (
           const [productId, requestedQuantity]
           of quantitiesByProduct
         ) {
           const product = productsById.get(productId)
 
-          if (requestedQuantity > product.stock) {
+          if (
+            requestedQuantity >
+            Number(product.stock)
+          ) {
             throw createRequestError(
               `Estoque insuficiente para o produto "${product.name}"`
             )
           }
         }
 
+        /*
+         * Valida o estoque agrupado por variante.
+         */
+        for (
+          const [variantId, requestedQuantity]
+          of quantitiesByVariant
+        ) {
+          const variant =
+            variantsById.get(variantId)
+
+          const product =
+            productsById.get(
+              Number(variant.product_id)
+            )
+
+          if (
+            requestedQuantity >
+            Number(variant.stock)
+          ) {
+            throw createRequestError(
+              `Estoque insuficiente para a opção selecionada do produto "${product.name}"`
+            )
+          }
+        }
+
+        const colorIds = [
+          ...new Set(
+            variants
+              .map(variant =>
+                variant.product_color_id
+              )
+              .filter(Boolean)
+              .map(Number)
+          ),
+        ]
+
+        const colors =
+          colorIds.length > 0
+            ? await ProductColor.findAll({
+                where: {
+                  id: {
+                    [Op.in]: colorIds,
+                  },
+                },
+                transaction,
+              })
+            : []
+
+        const colorsById = new Map(
+          colors.map(color => [
+            Number(color.id),
+            color,
+          ])
+        )
+
         const normalizedItems =
           requestedItems.map(item => {
             const product =
               productsById.get(item.productId)
 
-            const unitPriceCents = convertPriceToCents(
-              product.price,
-              product.name
-            )
+            const variant = item.variantId
+              ? variantsById.get(item.variantId)
+              : null
+
+            const variantPrice =
+              variant?.price_override
+
+            const price =
+              variantPrice !== null &&
+              variantPrice !== undefined
+                ? variantPrice
+                : product.price
+
+            const unitPriceCents =
+              convertPriceToCents(
+                price,
+                product.name
+              )
+
+            const color = variant?.product_color_id
+              ? colorsById.get(
+                  Number(
+                    variant.product_color_id
+                  )
+                )
+              : null
 
             return {
               productId: product.id,
+              variantId: variant?.id || null,
               quantity: item.quantity,
-              selectedSize: item.selectedSize,
+              selectedSize:
+                variant?.size ||
+                item.selectedSize ||
+                null,
+              sku: variant?.sku || null,
+              color: color?.name || null,
               unitPriceCents,
               subtotalCents:
                 unitPriceCents * item.quantity,
@@ -129,9 +287,12 @@ export async function createPaymentIntent(req, res) {
           normalizedItems.map(item => ({
             order_id: order.id,
             product_id: item.productId,
+            product_variant_id: item.variantId,
             quantity: item.quantity,
             price: item.unitPriceCents / 100,
             size: item.selectedSize,
+            sku: item.sku,
+            color: item.color,
           })),
           {
             transaction,
@@ -139,19 +300,42 @@ export async function createPaymentIntent(req, res) {
         )
 
         /*
-         * Reserva o estoque antes de liberar
-         * a transação.
+         * Reserva estoque das variantes.
+         */
+        for (
+          const [variantId, requestedQuantity]
+          of quantitiesByVariant
+        ) {
+          const variant =
+            variantsById.get(variantId)
+
+          await variant.update(
+            {
+              stock:
+                Number(variant.stock) -
+                requestedQuantity,
+            },
+            {
+              transaction,
+            }
+          )
+        }
+
+        /*
+         * Reserva estoque dos produtos legados.
          */
         for (
           const [productId, requestedQuantity]
           of quantitiesByProduct
         ) {
-          const product = productsById.get(productId)
+          const product =
+            productsById.get(productId)
 
           await product.update(
             {
               stock:
-                product.stock - requestedQuantity,
+                Number(product.stock) -
+                requestedQuantity,
             },
             {
               transaction,
@@ -189,10 +373,6 @@ export async function createPaymentIntent(req, res) {
 
     return res.status(201).json(result)
   } catch (error) {
-    /*
-     * Se o PaymentIntent foi criado, mas a transação
-     * do banco falhou, tentamos cancelá-lo no Stripe.
-     */
     if (paymentIntent?.id) {
       try {
         await stripe.paymentIntents.cancel(
@@ -212,7 +392,11 @@ export async function createPaymentIntent(req, res) {
     )
 
     return res
-      .status(error.isRequestError ? error.statusCode : 500)
+      .status(
+        error.isRequestError
+          ? error.statusCode
+          : 500
+      )
       .json({
         error:
           error.isRequestError
