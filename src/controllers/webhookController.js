@@ -4,6 +4,7 @@ import sequelize from '../database/connection.js'
 import Order from '../models/Order.js'
 import OrderItem from '../models/OrderItem.js'
 import Product from '../models/Product.js'
+import ProductVariant from '../models/ProductVariant.js'
 
 const stripe = new Stripe(
   process.env.STRIPE_SECRET_KEY
@@ -110,16 +111,52 @@ async function cancelOrderAndRestoreStock(
       })
 
       const quantitiesByProduct = new Map()
+      const quantitiesByVariant = new Map()
 
       for (const item of orderItems) {
+        if (item.product_variant_id) {
+          const currentQuantity =
+            quantitiesByVariant.get(
+            item.product_variant_id
+            ) || 0
+
+          quantitiesByVariant.set(
+            item.product_variant_id,
+            currentQuantity + item.quantity
+          )
+
+          continue
+        }
+
+        /*
+        * Pedidos antigos e produtos sem variantes
+        * continuam usando o estoque do produto.
+        */
         const currentQuantity =
           quantitiesByProduct.get(
-            item.product_id
+          item.product_id
           ) || 0
 
         quantitiesByProduct.set(
           item.product_id,
           currentQuantity + item.quantity
+        )
+      }
+
+      for (
+        const [variantId, quantity]
+        of quantitiesByVariant
+      ) {
+        await ProductVariant.increment(
+          {
+            stock: quantity,
+          },
+          {
+            where: {
+            id: variantId,
+            },
+            transaction,
+          }
         )
       }
 
@@ -133,7 +170,7 @@ async function cancelOrderAndRestoreStock(
           },
           {
             where: {
-              id: productId,
+            id: productId,
             },
             transaction,
           }

@@ -8,6 +8,7 @@ import {
   convertPriceToCents,
   createRequestError,
   groupQuantitiesByProduct,
+  groupQuantitiesByVariant,
   normalizeRequestedItems,
 } from './checkoutService.js'
 
@@ -129,5 +130,94 @@ describe('groupQuantitiesByProduct', () => {
 
     expect(quantities.get(10)).toBe(5)
     expect(quantities.get(20)).toBe(1)
+  })
+})
+
+describe('checkout com variantes', () => {
+  it('normaliza variantId quando ele é informado', () => {
+    const result = normalizeRequestedItems([
+      {
+        id: '10',
+        variantId: '25',
+        quantity: '2',
+        selectedSize: 'M',
+      },
+    ])
+
+    expect(result).toEqual([
+      {
+        productId: 10,
+        variantId: 25,
+        quantity: 2,
+        selectedSize: 'M',
+      },
+    ])
+  })
+
+  it('aceita product_variant_id por compatibilidade', () => {
+    const result = normalizeRequestedItems([
+      {
+        id: 10,
+        product_variant_id: 25,
+        quantity: 1,
+      },
+    ])
+
+    expect(result[0].variantId).toBe(25)
+  })
+
+  it('mantém o formato legado sem variantId', () => {
+    const result = normalizeRequestedItems([
+      {
+        id: 10,
+        quantity: 1,
+        selectedSize: 'G',
+      },
+    ])
+
+    expect(result).toEqual([
+      {
+        productId: 10,
+        quantity: 1,
+        selectedSize: 'G',
+      },
+    ])
+  })
+
+  it('rejeita variantId inválido', () => {
+    expect(() =>
+      normalizeRequestedItems([
+        {
+          id: 10,
+          variantId: 'inválido',
+          quantity: 1,
+        },
+      ])
+    ).toThrow(
+      'O carrinho possui um item inválido'
+    )
+  })
+
+  it('agrupa quantidades da mesma variante', () => {
+    const quantities =
+      groupQuantitiesByVariant([
+        {
+          productId: 10,
+          variantId: 25,
+          quantity: 2,
+        },
+        {
+          productId: 10,
+          variantId: 25,
+          quantity: 3,
+        },
+        {
+          productId: 11,
+          quantity: 4,
+        },
+      ])
+
+    expect(quantities.get(25)).toBe(5)
+    expect(quantities.size).toBe(1)
   })
 })

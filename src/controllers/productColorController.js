@@ -1,0 +1,214 @@
+import sequelize from '../database/connection.js'
+import Product from '../models/Product.js'
+import ProductColor from '../models/ProductColor.js'
+import ProductVariant from '../models/ProductVariant.js'
+
+import {
+  normalizeSlug,
+  validateHexColor,
+} from '../services/productCatalogService.js'
+
+export async function createColor(req, res) {
+  try {
+    const productId = Number(req.params.productId)
+    const { name, slug, hex_code } = req.body
+
+    if (!Number.isInteger(productId) || productId <= 0) {
+      return res.status(400).json({
+        error: 'Produto inválido',
+      })
+    }
+
+    if (!name?.trim()) {
+      return res.status(400).json({
+        error: 'Nome da cor é obrigatório',
+      })
+    }
+
+    if (!hex_code || !validateHexColor(hex_code)) {
+      return res.status(400).json({
+        error: 'A cor hexadecimal deve seguir o formato #RRGGBB',
+      })
+    }
+
+    const product = await Product.findOne({
+      where: {
+        id: productId,
+        active: true,
+      },
+    })
+
+    if (!product) {
+      return res.status(404).json({
+        error: 'Produto não encontrado',
+      })
+    }
+
+    const normalizedSlug = normalizeSlug(
+      slug?.trim() || name.trim()
+    )
+
+    if (!normalizedSlug) {
+      return res.status(400).json({
+        error: 'Slug da cor inválido',
+      })
+    }
+
+    const color = await ProductColor.create({
+      product_id: productId,
+      name: name.trim(),
+      slug: normalizedSlug,
+      hex_code: hex_code.toUpperCase(),
+      active: true,
+    })
+
+    return res.status(201).json(color)
+  } catch (error) {
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({
+        error: 'Este produto já possui uma cor com esse identificador',
+      })
+    }
+
+    console.error('Erro ao criar cor:', error)
+
+    return res.status(500).json({
+      error: 'Não foi possível criar a cor',
+    })
+  }
+}
+
+export async function updateColor(req, res) {
+  try {
+    const productId = Number(req.params.productId)
+    const colorId = Number(req.params.colorId)
+    const { name, slug, hex_code, active } = req.body
+
+    const color = await ProductColor.findOne({
+      where: {
+        id: colorId,
+        product_id: productId,
+      },
+    })
+
+    if (!color) {
+      return res.status(404).json({
+        error: 'Cor não encontrada',
+      })
+    }
+
+    const changes = {}
+
+    if (name !== undefined) {
+      if (!String(name).trim()) {
+        return res.status(400).json({
+          error: 'Nome da cor é obrigatório',
+        })
+      }
+
+      changes.name = String(name).trim()
+    }
+
+    if (slug !== undefined) {
+      const normalizedSlug = normalizeSlug(String(slug))
+
+      if (!normalizedSlug) {
+        return res.status(400).json({
+          error: 'Slug da cor inválido',
+        })
+      }
+
+      changes.slug = normalizedSlug
+    }
+
+    if (hex_code !== undefined) {
+      if (!validateHexColor(String(hex_code))) {
+        return res.status(400).json({
+          error: 'A cor hexadecimal deve seguir o formato #RRGGBB',
+        })
+      }
+
+      changes.hex_code = String(hex_code).toUpperCase()
+    }
+
+    if (active !== undefined) {
+      if (typeof active !== 'boolean') {
+        return res.status(400).json({
+          error: 'O campo "active" deve ser um valor booleano',
+        })
+      }
+
+      changes.active = active
+    }
+
+    await color.update(changes)
+
+    return res.json(color)
+  } catch (error) {
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({
+        error: 'Este produto já possui uma cor com esse identificador',
+      })
+    }
+
+    console.error('Erro ao atualizar cor:', error)
+
+    return res.status(500).json({
+      error: 'Não foi possível atualizar a cor',
+    })
+  }
+}
+
+export async function removeColor(req, res) {
+  try {
+    const productId = Number(req.params.productId)
+    const colorId = Number(req.params.colorId)
+
+    const color = await ProductColor.findOne({
+      where: {
+        id: colorId,
+        product_id: productId,
+      },
+    })
+
+    if (!color) {
+      return res.status(404).json({
+        error: 'Cor não encontrada',
+      })
+    }
+
+    await sequelize.transaction(async transaction => {
+      await color.update(
+        {
+          active: false,
+        },
+        {
+          transaction,
+        }
+      )
+
+      await ProductVariant.update(
+        {
+          active: false,
+        },
+        {
+          where: {
+            product_id: productId,
+            product_color_id: colorId,
+          },
+          transaction,
+        }
+      )
+    })
+
+    return res.json({
+      message: 'Cor desativada com sucesso',
+    })
+  } catch (error) {
+    console.error('Erro ao remover cor:', error)
+
+    return res.status(500).json({
+      error: 'Não foi possível remover a cor',
+    })
+  }
+}

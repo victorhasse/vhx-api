@@ -44,9 +44,7 @@ export function convertPriceToCents(
   return priceInCents
 }
 
-export function normalizeRequestedItems(
-  items
-) {
+export function normalizeRequestedItems(items) {
   if (
     !Array.isArray(items) ||
     items.length === 0
@@ -60,29 +58,47 @@ export function normalizeRequestedItems(
     const productId = Number(item.id)
     const quantity = Number(item.quantity)
 
+    const rawVariantId =
+      item.variantId ??
+      item.product_variant_id ??
+      null
+    const variantId =
+      rawVariantId === null ||
+      rawVariantId === ''
+        ? null
+        : Number(rawVariantId)
+
     if (
       !Number.isInteger(productId) ||
       productId <= 0 ||
       !Number.isInteger(quantity) ||
-      quantity <= 0
+      quantity <= 0 ||
+      (
+        variantId !== null &&
+        (!Number.isInteger(variantId) || variantId <= 0)
+      )
     ) {
       throw createRequestError(
         'O carrinho possui um item inválido'
       )
     }
 
-    return {
+    const normalizedItem = {
       productId,
       quantity,
       selectedSize:
         item.selectedSize || null,
     }
+
+    if (variantId !== null) {
+      normalizedItem.variantId = variantId
+    }
+
+    return normalizedItem
   })
 }
 
-export function groupQuantitiesByProduct(
-  items
-) {
+export function groupQuantitiesByProduct(items) {
   const quantities = new Map()
 
   for (const item of items) {
@@ -91,6 +107,26 @@ export function groupQuantitiesByProduct(
 
     quantities.set(
       item.productId,
+      currentQuantity + item.quantity
+    )
+  }
+
+  return quantities
+}
+
+export function groupQuantitiesByVariant(items) {
+  const quantities = new Map()
+
+  for (const item of items) {
+    if (!item.variantId) {
+      continue
+    }
+
+    const currentQuantity =
+      quantities.get(item.variantId) || 0
+
+    quantities.set(
+      item.variantId,
       currentQuantity + item.quantity
     )
   }
