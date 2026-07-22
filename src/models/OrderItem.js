@@ -43,6 +43,12 @@ const OrderItem = sequelize.define('OrderItem', {
   color: {
     type: DataTypes.STRING(80),
   },
+  product_name: {
+    type: DataTypes.STRING(150),
+  },
+  image_url: {
+    type: DataTypes.STRING(500),
+  },
 }, {
   tableName: 'order_items',
   timestamps: true,

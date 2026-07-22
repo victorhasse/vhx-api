@@ -7,6 +7,7 @@ import OrderItem from '../models/OrderItem.js'
 import Product from '../models/Product.js'
 import ProductColor from '../models/ProductColor.js'
 import ProductVariant from '../models/ProductVariant.js'
+import ProductImage from '../models/ProductImage.js'
 
 import {
   convertPriceToCents,
@@ -208,6 +209,46 @@ export async function createPaymentIntent(req, res) {
           ])
         )
 
+        const productImages =
+          await ProductImage.findAll({
+            where: {
+              product_id: {
+                [Op.in]: productIds,
+              },
+            },
+            order: [
+              ['is_primary', 'DESC'],
+              ['sort_order', 'ASC'],
+              ['id', 'ASC'],
+            ],
+            transaction,
+          })
+
+          const imagesByColorId = new Map()
+          const generalImagesByProductId = new Map()
+
+          for (const image of productImages) {
+            if (image.product_color_id) {
+            const colorId = Number(
+              image.product_color_id
+            )
+
+            /*
+            * A consulta já está ordenada:
+            * principal primeiro e depois pela ordem.
+            */
+            if (!imagesByColorId.has(colorId)) {
+              imagesByColorId.set(colorId, image)
+            }
+            continue
+          }
+
+          const productId = Number(image.product_id)
+          if (!generalImagesByProductId.has(productId)) {
+            generalImagesByProductId.set(productId, image)
+          }
+        }
+
         const normalizedItems =
           requestedItems.map(item => {
             const product =
@@ -240,9 +281,31 @@ export async function createPaymentIntent(req, res) {
                 )
               : null
 
+            const colorImage =
+              variant?.product_color_id
+                ? imagesByColorId.get(
+                    Number(
+                      variant.product_color_id
+                    )
+                  )
+                : null
+
+            const generalImage =
+              generalImagesByProductId.get(
+                Number(product.id)
+              )
+
+            const selectedImageUrl =
+              colorImage?.image_url ||
+              generalImage?.image_url ||
+              product.image_url ||
+              null
+
             return {
               productId: product.id,
               variantId: variant?.id || null,
+              productName: product.name,
+              imageUrl: selectedImageUrl,
               quantity: item.quantity,
               selectedSize:
                 variant?.size ||
@@ -288,6 +351,8 @@ export async function createPaymentIntent(req, res) {
             order_id: order.id,
             product_id: item.productId,
             product_variant_id: item.variantId,
+            product_name: item.productName,
+            image_url: item.imageUrl,
             quantity: item.quantity,
             price: item.unitPriceCents / 100,
             size: item.selectedSize,
