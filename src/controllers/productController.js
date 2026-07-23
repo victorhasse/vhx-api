@@ -5,6 +5,7 @@ import ProductVariant from "../models/ProductVariant.js";
 import ProductImage from "../models/ProductImage.js";
 
 import { filterProducts } from "../services/productFilterService.js";
+import { normalizeOptionalMeasurement } from "../services/productCatalogService.js";
 
 function getProductIncludes() {
   return [
@@ -62,6 +63,57 @@ function getProductIncludes() {
       ],
     },
   ];
+}
+
+const shippingFields = [
+  {
+    name: "weight",
+    label: "Peso",
+    decimalPlaces: 3,
+  },
+  {
+    name: "width",
+    label: "Largura",
+    decimalPlaces: 2,
+  },
+  {
+    name: "height",
+    label: "Altura",
+    decimalPlaces: 2,
+  },
+  {
+    name: "length",
+    label: "Comprimento",
+    decimalPlaces: 2,
+  },
+];
+
+function prepareProductPayload(body) {
+  const payload = {
+    ...body,
+  };
+
+  for (const field of shippingFields) {
+    if (!Object.prototype.hasOwnProperty.call(body, field.name)) {
+      continue;
+    }
+
+    const normalizedValue = normalizeOptionalMeasurement(
+      body[field.name],
+      field.decimalPlaces,
+    );
+
+    if (normalizedValue === undefined) {
+      const error = new Error(`${field.label} deve ser maior que zero`);
+
+      error.statusCode = 400;
+      throw error;
+    }
+
+    payload[field.name] = normalizedValue;
+  }
+
+  return payload;
 }
 
 export async function getAll(req, res) {
@@ -188,22 +240,45 @@ export async function getById(req, res) {
 
 export async function create(req, res) {
   try {
-    const product = await Product.create(req.body);
+    const payload = prepareProductPayload(req.body);
+
+    const product = await Product.create(payload);
+
     return res.status(201).json(product);
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error("Erro ao criar produto:", error);
+
+    return res.status(error.statusCode || 500).json({
+      error: error.statusCode
+        ? error.message
+        : "Não foi possível criar o produto",
+    });
   }
 }
 
 export async function update(req, res) {
   try {
     const product = await Product.findByPk(req.params.id);
-    if (!product)
-      return res.status(404).json({ error: "Produto não encontrado" });
-    await product.update(req.body);
+
+    if (!product) {
+      return res.status(404).json({
+        error: "Produto não encontrado",
+      });
+    }
+
+    const payload = prepareProductPayload(req.body);
+
+    await product.update(payload);
+
     return res.json(product);
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error("Erro ao atualizar produto:", error);
+
+    return res.status(error.statusCode || 500).json({
+      error: error.statusCode
+        ? error.message
+        : "Não foi possível atualizar o produto",
+    });
   }
 }
 
