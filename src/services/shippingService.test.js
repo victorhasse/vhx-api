@@ -1,49 +1,42 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest'
+import { describe, expect, it } from "vitest";
 
 import {
   buildShippingPayload,
   buildShippingProducts,
-} from './shippingService.js'
+} from "./shippingService.js";
 
-function createProduct(
-  overrides = {}
-) {
+import { requestShippingQuote } from "./shippingService.js";
+
+function createProduct(overrides = {}) {
   return {
     id: 10,
-    name: 'Camiseta VHX',
-    price: '149.90',
-    weight: '0.350',
-    width: '20.00',
-    height: '10.00',
-    length: '30.00',
+    name: "Camiseta VHX",
+    price: "149.90",
+    weight: "0.350",
+    width: "20.00",
+    height: "10.00",
+    length: "30.00",
     ...overrides,
-  }
+  };
 }
 
-describe('buildShippingProducts', () => {
-  it('monta os produtos para o Melhor Envio', () => {
-    const productsById = new Map([
-      [10, createProduct()],
-    ])
+describe("buildShippingProducts", () => {
+  it("monta os produtos para o Melhor Envio", () => {
+    const productsById = new Map([[10, createProduct()]]);
 
-    const products =
-      buildShippingProducts(
-        [
-          {
-            productId: 10,
-            quantity: 2,
-          },
-        ],
-        productsById
-      )
+    const products = buildShippingProducts(
+      [
+        {
+          productId: 10,
+          quantity: 2,
+        },
+      ],
+      productsById,
+    );
 
     expect(products).toEqual([
       {
-        id: '10',
+        id: "10",
         width: 20,
         height: 10,
         length: 30,
@@ -51,10 +44,10 @@ describe('buildShippingProducts', () => {
         insurance_value: 149.9,
         quantity: 2,
       },
-    ])
-  })
+    ]);
+  });
 
-  it('rejeita produto sem medidas de frete', () => {
+  it("rejeita produto sem medidas de frete", () => {
     const productsById = new Map([
       [
         10,
@@ -62,7 +55,7 @@ describe('buildShippingProducts', () => {
           weight: null,
         }),
       ],
-    ])
+    ]);
 
     expect(() =>
       buildShippingProducts(
@@ -72,14 +65,12 @@ describe('buildShippingProducts', () => {
             quantity: 1,
           },
         ],
-        productsById
-      )
-    ).toThrow(
-      'não possui peso válido'
-    )
-  })
+        productsById,
+      ),
+    ).toThrow("não possui peso válido");
+  });
 
-  it('rejeita produto inexistente', () => {
+  it("rejeita produto inexistente", () => {
     expect(() =>
       buildShippingProducts(
         [
@@ -88,58 +79,164 @@ describe('buildShippingProducts', () => {
             quantity: 1,
           },
         ],
-        new Map()
-      )
-    ).toThrow(
-      'Um ou mais produtos não estão disponíveis'
-    )
-  })
-})
+        new Map(),
+      ),
+    ).toThrow("Um ou mais produtos não estão disponíveis");
+  });
+});
 
-describe('buildShippingPayload', () => {
-  it('normaliza os CEPs e monta o payload', () => {
-    const payload =
-      buildShippingPayload({
-        originPostalCode: '88035-000',
-        destinationPostalCode:
-          '01310-100',
-        requestedItems: [
-          {
-            productId: 10,
-            quantity: 1,
-          },
-        ],
-        productsById: new Map([
-          [10, createProduct()],
-        ]),
-      })
+describe("buildShippingPayload", () => {
+  it("normaliza os CEPs e monta o payload", () => {
+    const payload = buildShippingPayload({
+      originPostalCode: "88035-000",
+      destinationPostalCode: "01310-100",
+      requestedItems: [
+        {
+          productId: 10,
+          quantity: 1,
+        },
+      ],
+      productsById: new Map([[10, createProduct()]]),
+    });
 
-    expect(payload.from.postal_code).toBe(
-      '88035000'
-    )
+    expect(payload.from.postal_code).toBe("88035000");
 
-    expect(payload.to.postal_code).toBe(
-      '01310100'
-    )
+    expect(payload.to.postal_code).toBe("01310100");
 
-    expect(payload.products).toHaveLength(1)
-  })
+    expect(payload.products).toHaveLength(1);
+  });
 
-  it('rejeita CEP de destino inválido', () => {
+  it("rejeita CEP de destino inválido", () => {
     expect(() =>
       buildShippingPayload({
-        originPostalCode: '88035000',
-        destinationPostalCode: '123',
+        originPostalCode: "88035000",
+        destinationPostalCode: "123",
         requestedItems: [
           {
             productId: 10,
             quantity: 1,
           },
         ],
-        productsById: new Map([
-          [10, createProduct()],
-        ]),
-      })
-    ).toThrow('Informe um CEP válido')
-  })
-})
+        productsById: new Map([[10, createProduct()]]),
+      }),
+    ).toThrow("Informe um CEP válido");
+  });
+});
+
+describe("requestShippingQuote", () => {
+  it("normaliza as opções válidas retornadas", async () => {
+    process.env.MELHOR_ENVIO_TOKEN = "token-de-teste";
+    process.env.MELHOR_ENVIO_BASE_URL = "https://sandbox.melhorenvio.com.br";
+    process.env.MELHOR_ENVIO_USER_AGENT = "VHX Store (teste@example.com)";
+
+    const fetchImplementation = async () => ({
+      ok: true,
+      json: async () => [
+        {
+          id: 1,
+          name: "PAC",
+          price: "24.90",
+          currency: "R$",
+          delivery_time: 6,
+          delivery_range: {
+            min: 5,
+            max: 7,
+          },
+          company: {
+            id: 1,
+            name: "Correios",
+            picture: "logo.png",
+          },
+        },
+        {
+          id: 2,
+          name: "Indisponível",
+          error: "Serviço indisponível",
+        },
+      ],
+    });
+
+    const options = await requestShippingQuote(
+      {
+        from: {
+          postal_code: "88035000",
+        },
+        to: {
+          postal_code: "01310100",
+        },
+        products: [],
+      },
+      {
+        fetchImplementation,
+      },
+    );
+
+    expect(options).toEqual([
+      {
+        id: 1,
+        name: "PAC",
+        price: 24.9,
+        currency: "R$",
+        deliveryTime: 6,
+        deliveryRange: {
+          min: 5,
+          max: 7,
+        },
+        company: {
+          id: 1,
+          name: "Correios",
+          picture: "logo.png",
+        },
+      },
+    ]);
+  });
+
+  it("trata falha de comunicação", async () => {
+    process.env.MELHOR_ENVIO_TOKEN = "token-de-teste";
+    process.env.MELHOR_ENVIO_BASE_URL = "https://sandbox.melhorenvio.com.br";
+    process.env.MELHOR_ENVIO_USER_AGENT = "VHX Store (teste@example.com)";
+
+    const fetchImplementation = async () => {
+      throw new Error("Falha de rede");
+    };
+
+    await expect(
+      requestShippingQuote(
+        {},
+        {
+          fetchImplementation,
+        },
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 502,
+      message: "Não foi possível consultar o frete no momento",
+    });
+  });
+
+  it("rejeita resposta sem opções disponíveis", async () => {
+    process.env.MELHOR_ENVIO_TOKEN = "token-de-teste";
+    process.env.MELHOR_ENVIO_BASE_URL = "https://sandbox.melhorenvio.com.br";
+    process.env.MELHOR_ENVIO_USER_AGENT = "VHX Store (teste@example.com)";
+
+    const fetchImplementation = async () => ({
+      ok: true,
+      json: async () => [
+        {
+          id: 1,
+          error: "Serviço indisponível",
+        },
+      ],
+    });
+
+    await expect(
+      requestShippingQuote(
+        {},
+        {
+          fetchImplementation,
+        },
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+    });
+  });
+});
