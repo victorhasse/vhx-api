@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildShippingPayload,
   buildShippingProducts,
+  requestShippingQuote,
+  validateSelectedShipping,
 } from "./shippingService.js";
-
-import { requestShippingQuote } from "./shippingService.js";
 
 function createProduct(overrides = {}) {
   return {
@@ -238,5 +238,111 @@ describe("requestShippingQuote", () => {
     ).rejects.toMatchObject({
       statusCode: 422,
     });
+  });
+});
+describe("validateSelectedShipping", () => {
+  const productsById = new Map([
+    [
+      36,
+      {
+        id: 36,
+        name: "Camiseta VHX",
+        width: 20,
+        height: 5,
+        length: 30,
+        weight: 0.4,
+        price: 100,
+      },
+    ],
+  ]);
+
+  const requestedItems = [
+    {
+      productId: 36,
+      quantity: 1,
+    },
+  ];
+
+  it("recalcula e retorna a modalidade selecionada", async () => {
+    const fetchImplementation = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        {
+          id: 1,
+          name: "PAC",
+          price: "25.90",
+          currency: "R$",
+          delivery_time: 6,
+          delivery_range: {
+            min: 5,
+            max: 7,
+          },
+          company: {
+            id: 1,
+            name: "Correios",
+            picture: null,
+          },
+        },
+      ],
+    });
+
+    const result = await validateSelectedShipping({
+      destinationPostalCode: "88035-000",
+      shippingServiceId: 1,
+      requestedItems,
+      productsById,
+      originPostalCode: "88035000",
+      fetchImplementation,
+    });
+
+    expect(result).toMatchObject({
+      id: 1,
+      name: "PAC",
+      price: 25.9,
+      priceCents: 2590,
+      postalCode: "88035000",
+    });
+  });
+
+  it("rejeita modalidade que não está disponível", async () => {
+    const fetchImplementation = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        {
+          id: 1,
+          name: "PAC",
+          price: "25.90",
+          delivery_time: 6,
+          company: {
+            id: 1,
+            name: "Correios",
+          },
+        },
+      ],
+    });
+
+    await expect(
+      validateSelectedShipping({
+        destinationPostalCode: "88035000",
+        shippingServiceId: 999,
+        requestedItems,
+        productsById,
+        originPostalCode: "88035000",
+        fetchImplementation,
+      }),
+    ).rejects.toThrow(
+      "A modalidade de frete selecionada não está mais disponível",
+    );
+  });
+
+  it("rejeita identificador de modalidade inválido", async () => {
+    await expect(
+      validateSelectedShipping({
+        destinationPostalCode: "88035000",
+        shippingServiceId: "inválido",
+        requestedItems,
+        productsById,
+      }),
+    ).rejects.toThrow("Selecione uma modalidade de frete válida");
   });
 });

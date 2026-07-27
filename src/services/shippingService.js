@@ -172,3 +172,54 @@ export async function requestShippingQuote(
 
   return options;
 }
+export async function validateSelectedShipping({
+  destinationPostalCode,
+  shippingServiceId,
+  requestedItems,
+  productsById,
+  originPostalCode = process.env.STORE_POSTAL_CODE,
+  fetchImplementation = fetch,
+}) {
+  const normalizedServiceId = Number(shippingServiceId);
+
+  if (!Number.isInteger(normalizedServiceId) || normalizedServiceId <= 0) {
+    throw createRequestError("Selecione uma modalidade de frete válida");
+  }
+
+  const payload = buildShippingPayload({
+    destinationPostalCode,
+    requestedItems,
+    productsById,
+    originPostalCode,
+  });
+
+  const shippingOptions = await requestShippingQuote(payload, {
+    fetchImplementation,
+  });
+
+  const selectedShipping = shippingOptions.find(
+    (option) => option.id === normalizedServiceId,
+  );
+
+  if (!selectedShipping) {
+    throw createRequestError(
+      "A modalidade de frete selecionada não está mais disponível",
+      422,
+    );
+  }
+
+  const priceCents = Math.round(selectedShipping.price * 100);
+
+  if (!Number.isSafeInteger(priceCents) || priceCents < 0) {
+    throw createRequestError(
+      "O serviço de frete retornou um valor inválido",
+      502,
+    );
+  }
+
+  return {
+    ...selectedShipping,
+    priceCents,
+    postalCode: normalizePostalCode(destinationPostalCode),
+  };
+}
