@@ -8,6 +8,8 @@ import authRoutes from "./src/routes/auth.js";
 import orderRoutes from "./src/routes/orders.js";
 import paymentRoutes from "./src/routes/payments.js";
 import shippingRoutes from "./src/routes/shipping.js";
+import "./src/models/CouponRedemption.js";
+import couponRoutes from "./src/routes/coupons.js";
 
 dotenv.config();
 
@@ -43,6 +45,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use('/api/shipping', shippingRoutes);
+app.use("/api/coupons", couponRoutes);
 app.get("/api/health", (req, res) => {
   res.json({ status: "VHX API rodando ✅", version: "1.0.0" });
 });

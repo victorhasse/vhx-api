@@ -1,6 +1,7 @@
 import { DataTypes } from "sequelize";
 import sequelize from "../database/connection.js";
 import User from "./User.js";
+import Coupon from "./Coupon.js";
 
 const Order = sequelize.define(
   "Order",
@@ -18,6 +19,30 @@ const Order = sequelize.define(
     total: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
+    },
+    subtotal: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+    },
+
+    coupon_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: Coupon,
+        key: "id",
+      },
+    },
+
+    coupon_code: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+    },
+
+    discount_amount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
     },
     payment_intent_id: {
       type: DataTypes.STRING(255),
@@ -70,5 +95,14 @@ const Order = sequelize.define(
 
 Order.belongsTo(User, { foreignKey: "user_id" });
 User.hasMany(Order, { foreignKey: "user_id" });
+Order.belongsTo(Coupon, {
+  foreignKey: "coupon_id",
+  as: "coupon",
+});
+
+Coupon.hasMany(Order, {
+  foreignKey: "coupon_id",
+  as: "orders",
+});
 
 export default Order;
