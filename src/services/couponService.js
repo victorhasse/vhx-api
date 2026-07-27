@@ -1,9 +1,9 @@
 import { Op } from "sequelize";
 
 import Coupon from "../models/Coupon.js";
-import CouponRedemption from "../models/CouponRedemption.js";
 import Product from "../models/Product.js";
 import ProductVariant from "../models/ProductVariant.js";
+import Order from "../models/Order.js";
 
 import {
   convertPriceToCents,
@@ -134,6 +134,7 @@ export async function validateAndCalculateCoupon({
   code,
   subtotalCents,
   transaction,
+  reserveUsage = false,
 }) {
   const normalizedCode = normalizeCouponCode(code);
 
@@ -148,6 +149,16 @@ export async function validateAndCalculateCoupon({
       code: normalizedCode,
     },
     transaction,
+    /*
+     * Durante a criação do pagamento, bloqueia o cupom.
+     * Isso serializa pedidos concorrentes que tentam
+     * utilizar um cupom com limite de usos.
+     */
+    ...(reserveUsage && transaction
+      ? {
+          lock: transaction.LOCK.UPDATE,
+        }
+      : {}),
   });
 
   if (!coupon) {
@@ -186,6 +197,15 @@ export async function validateAndCalculateCoupon({
     Number(coupon.minimum_order_amount || 0) * 100,
   );
 
+  if (
+    !Number.isSafeInteger(minimumOrderCents) ||
+    minimumOrderCents < 0
+  ) {
+    throw createRequestError(
+      "Valor mínimo do cupom inválido",
+    );
+  }
+
   if (subtotalCents < minimumOrderCents) {
     throw createRequestError(
       `Este cupom exige um subtotal mínimo de R$ ${(
@@ -195,16 +215,23 @@ export async function validateAndCalculateCoupon({
   }
 
   if (coupon.usage_limit !== null) {
-    const redemptionCount =
-      await CouponRedemption.count({
-        where: {
-          coupon_id: coupon.id,
+    /*
+     * Um pedido pendente já reservou uma utilização.
+     * Pedidos cancelados não entram na contagem.
+     */
+    const reservedUsageCount = await Order.count({
+      where: {
+        coupon_id: coupon.id,
+        status: {
+          [Op.in]: ["pending", "confirmed"],
         },
-        transaction,
-      });
+      },
+      transaction,
+    });
 
     if (
-      redemptionCount >= Number(coupon.usage_limit)
+      reservedUsageCount >=
+      Number(coupon.usage_limit)
     ) {
       throw createRequestError(
         "O limite de utilizações deste cupom foi atingido",

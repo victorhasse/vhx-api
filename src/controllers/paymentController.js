@@ -9,6 +9,8 @@ import ProductColor from "../models/ProductColor.js";
 import ProductVariant from "../models/ProductVariant.js";
 import ProductImage from "../models/ProductImage.js";
 import { validateSelectedShipping } from "../services/shippingService.js";
+import { confirmPaidOrder } from "../services/orderConfirmationService.js";
+import { validateAndCalculateCoupon } from "../services/couponService.js";
 
 import {
   convertPriceToCents,
@@ -24,8 +26,13 @@ export async function createPaymentIntent(req, res) {
   let paymentIntent = null;
 
   try {
-    const { items, address, shippingServiceId, destinationPostalCode } =
-      req.body;
+    const {
+      items,
+      address,
+      shippingServiceId,
+      destinationPostalCode,
+      couponCode,
+    } = req.body;
     const userId = req.user.id;
 
     const requestedItems = normalizeRequestedItems(items);
@@ -256,9 +263,32 @@ export async function createPaymentIntent(req, res) {
         0,
       );
 
+      if (
+        !Number.isSafeInteger(productsTotalCents) ||
+        productsTotalCents <= 0
+      ) {
+        throw createRequestError("Subtotal dos produtos inválido");
+      }
+
+      let appliedCoupon = null;
+      let discountCents = 0;
+
+      if (typeof couponCode === "string" && couponCode.trim()) {
+        const couponResult = await validateAndCalculateCoupon({
+          code: couponCode,
+          subtotalCents: productsTotalCents,
+          transaction,
+          reserveUsage: true,
+        });
+
+        appliedCoupon = couponResult.coupon;
+        discountCents = couponResult.discountCents;
+      }
+
       const shippingPriceCents = selectedShipping.priceCents;
 
-      const totalCents = productsTotalCents + shippingPriceCents;
+      const totalCents =
+        productsTotalCents - discountCents + shippingPriceCents;
 
       if (!Number.isSafeInteger(totalCents) || totalCents <= 0) {
         throw createRequestError("Valor total do pedido inválido");
@@ -267,6 +297,10 @@ export async function createPaymentIntent(req, res) {
       const order = await Order.create(
         {
           user_id: userId,
+          subtotal: productsTotalCents / 100,
+          coupon_id: appliedCoupon?.id || null,
+          coupon_code: appliedCoupon?.code || null,
+          discount_amount: discountCents / 100,
           total: totalCents / 100,
           status: "pending",
           address: JSON.stringify(address),
@@ -344,6 +378,7 @@ export async function createPaymentIntent(req, res) {
         metadata: {
           user_id: String(userId),
           order_id: String(order.id),
+          coupon_code: appliedCoupon?.code || "",
         },
       });
 
@@ -443,15 +478,11 @@ export async function confirmPayment(req, res) {
       });
     }
 
-    if (order.status !== "confirmed") {
-      await order.update({
-        status: "confirmed",
-      });
-    }
+    const confirmedOrder = await confirmPaidOrder(paymentIntent);
 
     return res.json({
       success: true,
-      order,
+      order: confirmedOrder,
     });
   } catch (error) {
     console.error("Erro ao confirmar pagamento:", error);
