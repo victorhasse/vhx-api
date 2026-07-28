@@ -86,6 +86,30 @@ const Order = sequelize.define(
       type: DataTypes.STRING(8),
       allowNull: true,
     },
+    tracking_code: {
+      type: DataTypes.STRING(120),
+      allowNull: true,
+    },
+
+    tracking_carrier: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+    },
+
+    tracking_url: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+    },
+
+    shipped_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+
+    delivered_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
   },
   {
     tableName: "orders",

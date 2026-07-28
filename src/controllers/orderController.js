@@ -1,66 +1,30 @@
-import Order from '../models/Order.js'
-import OrderItem from '../models/OrderItem.js'
-import Product from '../models/Product.js'
-
-export async function createOrder(req, res) {
-  try {
-    const { items, address } = req.body
-    const user_id = req.user.id
-
-    if (!items || items.length === 0)
-      return res.status(400).json({ error: 'Carrinho vazio' })
-
-    // Calcula o total
-    const total = items.reduce((acc, item) => acc + item.price * item.quantity, 0)
-
-    // Cria o pedido
-    const order = await Order.create({
-      user_id,
-      total,
-      status: 'pending',
-      address: JSON.stringify(address),
-    })
-
-    // Cria os itens do pedido
-    await Promise.all(items.map(item =>
-      OrderItem.create({
-        order_id:   order.id,
-        product_id: item.id,
-        quantity:   item.quantity,
-        price:      item.price,
-        size:       item.selectedSize || null,
-      })
-    ))
-
-    // Busca o pedido completo com itens
-    const fullOrder = await Order.findByPk(order.id, {
-      include: [{
-        model: OrderItem,
-        as: 'items',
-        include: [{ model: Product, as: 'product', attributes: ['id', 'name', 'image_url'] }],
-      }],
-    })
-
-    return res.status(201).json(fullOrder)
-  } catch (err) {
-    return res.status(500).json({ error: err.message })
-  }
-}
+import Order from "../models/Order.js";
+import OrderItem from "../models/OrderItem.js";
+import Product from "../models/Product.js";
+import User from "../models/User.js";
 
 export async function getMyOrders(req, res) {
   try {
     const orders = await Order.findAll({
       where: { user_id: req.user.id },
-      include: [{
-        model: OrderItem,
-        as: 'items',
-        include: [{ model: Product, as: 'product', attributes: ['id', 'name', 'image_url'] }],
-      }],
-      order: [['createdAt', 'DESC']],
-    })
-    return res.json(orders)
+      include: [
+        {
+          model: OrderItem,
+          as: "items",
+          include: [
+            {
+              model: Product,
+              as: "product",
+              attributes: ["id", "name", "image_url"],
+            },
+          ],
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+    return res.json(orders);
   } catch (err) {
-    return res.status(500).json({ error: err.message })
+    return res.status(500).json({ error: err.message });
   }
 }
 
@@ -68,15 +32,201 @@ export async function getOrderById(req, res) {
   try {
     const order = await Order.findOne({
       where: { id: req.params.id, user_id: req.user.id },
-      include: [{
-        model: OrderItem,
-        as: 'items',
-        include: [{ model: Product, as: 'product', attributes: ['id', 'name', 'image_url'] }],
-      }],
-    })
-    if (!order) return res.status(404).json({ error: 'Pedido não encontrado' })
-    return res.json(order)
+      include: [
+        {
+          model: OrderItem,
+          as: "items",
+          include: [
+            {
+              model: Product,
+              as: "product",
+              attributes: ["id", "name", "image_url"],
+            },
+          ],
+        },
+      ],
+    });
+    if (!order) return res.status(404).json({ error: "Pedido não encontrado" });
+    return res.json(order);
   } catch (err) {
-    return res.status(500).json({ error: err.message })
+    return res.status(500).json({ error: err.message });
+  }
+}
+function normalizeOptionalText(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+
+  return normalized || null;
+}
+
+function isValidTrackingUrl(value) {
+  if (!value) {
+    return true;
+  }
+
+  try {
+    const url = new URL(value);
+
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function getOrderIncludes() {
+  return [
+    {
+      model: User,
+      attributes: ["id", "name", "email"],
+    },
+    {
+      model: OrderItem,
+      as: "items",
+      include: [
+        {
+          model: Product,
+          as: "product",
+          attributes: ["id", "name", "image_url"],
+        },
+      ],
+    },
+  ];
+}
+
+export async function getAdminOrders(req, res) {
+  try {
+    const orders = await Order.findAll({
+      include: getOrderIncludes(),
+      order: [["createdAt", "DESC"]],
+    });
+
+    return res.json(orders);
+  } catch (error) {
+    console.error("Erro ao listar pedidos administrativos:", error);
+
+    return res.status(500).json({
+      error: "Não foi possível carregar os pedidos",
+    });
+  }
+}
+
+export async function updateAdminOrder(req, res) {
+  try {
+    const orderId = Number(req.params.id);
+
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({
+        error: "Pedido inválido",
+      });
+    }
+
+    const order = await Order.findByPk(orderId);
+
+    if (!order) {
+      return res.status(404).json({
+        error: "Pedido não encontrado",
+      });
+    }
+
+    const requestedStatus = normalizeOptionalText(req.body.status);
+
+    const trackingCode = normalizeOptionalText(req.body.tracking_code);
+
+    const trackingCarrier = normalizeOptionalText(req.body.tracking_carrier);
+
+    const trackingUrl = normalizeOptionalText(req.body.tracking_url);
+
+    if (!requestedStatus) {
+      return res.status(400).json({
+        error: "Informe o novo status do pedido",
+      });
+    }
+
+    if (requestedStatus !== "shipped" && requestedStatus !== "delivered") {
+      return res.status(400).json({
+        error:
+          "O painel permite apenas marcar pedidos como enviados ou entregues",
+      });
+    }
+
+    if (
+      requestedStatus === "shipped" &&
+      order.status !== "confirmed" &&
+      order.status !== "shipped"
+    ) {
+      return res.status(409).json({
+        error: "Somente pedidos confirmados podem ser enviados",
+      });
+    }
+
+    if (requestedStatus === "delivered" && order.status !== "shipped") {
+      return res.status(409).json({
+        error: "Somente pedidos enviados podem ser marcados como entregues",
+      });
+    }
+
+    if (requestedStatus === "shipped" && !trackingCode) {
+      return res.status(400).json({
+        error: "O código de rastreamento é obrigatório para pedidos enviados",
+      });
+    }
+
+    if (trackingCode && trackingCode.length > 120) {
+      return res.status(400).json({
+        error: "O código de rastreamento deve ter no máximo 120 caracteres",
+      });
+    }
+
+    if (trackingCarrier && trackingCarrier.length > 100) {
+      return res.status(400).json({
+        error: "A transportadora deve ter no máximo 100 caracteres",
+      });
+    }
+
+    if (trackingUrl && trackingUrl.length > 500) {
+      return res.status(400).json({
+        error: "O link de rastreamento deve ter no máximo 500 caracteres",
+      });
+    }
+
+    if (!isValidTrackingUrl(trackingUrl)) {
+      return res.status(400).json({
+        error:
+          "Informe um link de rastreamento válido, iniciado por http:// ou https://",
+      });
+    }
+
+    if (requestedStatus === "shipped") {
+      order.status = "shipped";
+      order.tracking_code = trackingCode;
+      order.tracking_carrier = trackingCarrier;
+      order.tracking_url = trackingUrl;
+
+      if (!order.shipped_at) {
+        order.shipped_at = new Date();
+      }
+    }
+
+    if (requestedStatus === "delivered") {
+      order.status = "delivered";
+      order.delivered_at = new Date();
+    }
+
+    await order.save();
+
+    const updatedOrder = await Order.findByPk(order.id, {
+      include: getOrderIncludes(),
+    });
+
+    return res.json(updatedOrder);
+  } catch (error) {
+    console.error("Erro ao atualizar pedido:", error);
+
+    return res.status(500).json({
+      error: "Não foi possível atualizar o pedido",
+    });
   }
 }

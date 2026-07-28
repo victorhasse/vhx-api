@@ -1,11 +1,21 @@
-import { Router } from 'express'
-import { createOrder, getMyOrders, getOrderById } from '../controllers/orderController.js'
-import { authMiddleware } from '../middleware/auth.js'
+import { Router } from "express";
 
-const router = Router()
+import {
+  getAdminOrders,
+  getMyOrders,
+  getOrderById,
+  updateAdminOrder,
+} from "../controllers/orderController.js";
+import { adminMiddleware, authMiddleware } from "../middleware/auth.js";
 
-router.post('/',     authMiddleware, createOrder)
-router.get('/',      authMiddleware, getMyOrders)
-router.get('/:id',   authMiddleware, getOrderById)
+const router = Router();
 
-export default router
+router.get("/admin/all", authMiddleware, adminMiddleware, getAdminOrders);
+
+router.patch("/admin/:id", authMiddleware, adminMiddleware, updateAdminOrder);
+
+router.get("/", authMiddleware, getMyOrders);
+
+router.get("/:id", authMiddleware, getOrderById);
+
+export default router;
