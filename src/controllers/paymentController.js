@@ -20,6 +20,11 @@ import {
   normalizeRequestedItems,
 } from "../services/checkoutService.js";
 
+import {
+  CASHBACK_MINIMUM_ORDER_AMOUNT,
+  CASHBACK_RATE,
+} from "../services/cashbackService.js";
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 export async function createPaymentIntent(req, res) {
@@ -253,6 +258,7 @@ export async function createPaymentIntent(req, res) {
           selectedSize: variant?.size || item.selectedSize || null,
           sku: variant?.sku || null,
           color: color?.name || null,
+          isPromotional: Boolean(product.is_promotional),
           unitPriceCents,
           subtotalCents: unitPriceCents * item.quantity,
         };
@@ -285,6 +291,28 @@ export async function createPaymentIntent(req, res) {
         discountCents = couponResult.discountCents;
       }
 
+      const minimumOrderCents = CASHBACK_MINIMUM_ORDER_AMOUNT * 100;
+
+      const canEarnCashback =
+        !appliedCoupon && productsTotalCents >= minimumOrderCents;
+
+      const cashbackEligibleCents = canEarnCashback
+        ? normalizedItems
+            .filter((item) => !item.isPromotional)
+            .reduce((total, item) => total + item.subtotalCents, 0)
+        : 0;
+
+      const cashbackEarnedCents = Math.round(
+        (cashbackEligibleCents * CASHBACK_RATE) / 100,
+      );
+
+      if (
+        !Number.isSafeInteger(cashbackEligibleCents) ||
+        !Number.isSafeInteger(cashbackEarnedCents)
+      ) {
+        throw createRequestError("Não foi possível calcular o VHX Cash");
+      }
+
       const shippingPriceCents = selectedShipping.priceCents;
 
       const totalCents =
@@ -301,7 +329,16 @@ export async function createPaymentIntent(req, res) {
           coupon_id: appliedCoupon?.id || null,
           coupon_code: appliedCoupon?.code || null,
           discount_amount: discountCents / 100,
+          cashback_eligible_amount: cashbackEligibleCents / 100,
+          cashback_rate: cashbackEligibleCents > 0 ? CASHBACK_RATE : 0,
+          cashback_earned_amount: cashbackEarnedCents / 100,
+          cashback_redeemed_amount: 0,
           total: totalCents / 100,
+          cashback: {
+            eligibleAmount: cashbackEligibleCents / 100,
+            rate: cashbackEligibleCents > 0 ? CASHBACK_RATE : 0,
+            earnedAmount: cashbackEarnedCents / 100,
+          },
           status: "pending",
           address: JSON.stringify(address),
 

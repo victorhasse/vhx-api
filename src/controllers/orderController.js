@@ -2,6 +2,8 @@ import Order from "../models/Order.js";
 import OrderItem from "../models/OrderItem.js";
 import Product from "../models/Product.js";
 import User from "../models/User.js";
+import sequelize from "../database/connection.js";
+import { releaseOrderCashback } from "../services/cashbackService.js";
 
 export async function getMyOrders(req, res) {
   try {
@@ -123,21 +125,21 @@ export async function updateAdminOrder(req, res) {
       });
     }
 
-    const order = await Order.findByPk(orderId);
+    const requestedStatus = normalizeOptionalText(
+      req.body.status,
+    );
 
-    if (!order) {
-      return res.status(404).json({
-        error: "Pedido não encontrado",
-      });
-    }
+    const trackingCode = normalizeOptionalText(
+      req.body.tracking_code,
+    );
 
-    const requestedStatus = normalizeOptionalText(req.body.status);
+    const trackingCarrier = normalizeOptionalText(
+      req.body.tracking_carrier,
+    );
 
-    const trackingCode = normalizeOptionalText(req.body.tracking_code);
-
-    const trackingCarrier = normalizeOptionalText(req.body.tracking_carrier);
-
-    const trackingUrl = normalizeOptionalText(req.body.tracking_url);
+    const trackingUrl = normalizeOptionalText(
+      req.body.tracking_url,
+    );
 
     if (!requestedStatus) {
       return res.status(400).json({
@@ -145,7 +147,10 @@ export async function updateAdminOrder(req, res) {
       });
     }
 
-    if (requestedStatus !== "shipped" && requestedStatus !== "delivered") {
+    if (
+      requestedStatus !== "shipped" &&
+      requestedStatus !== "delivered"
+    ) {
       return res.status(400).json({
         error:
           "O painel permite apenas marcar pedidos como enviados ou entregues",
@@ -154,41 +159,35 @@ export async function updateAdminOrder(req, res) {
 
     if (
       requestedStatus === "shipped" &&
-      order.status !== "confirmed" &&
-      order.status !== "shipped"
+      !trackingCode
     ) {
-      return res.status(409).json({
-        error: "Somente pedidos confirmados podem ser enviados",
-      });
-    }
-
-    if (requestedStatus === "delivered" && order.status !== "shipped") {
-      return res.status(409).json({
-        error: "Somente pedidos enviados podem ser marcados como entregues",
-      });
-    }
-
-    if (requestedStatus === "shipped" && !trackingCode) {
       return res.status(400).json({
-        error: "O código de rastreamento é obrigatório para pedidos enviados",
+        error:
+          "O código de rastreamento é obrigatório para pedidos enviados",
       });
     }
 
     if (trackingCode && trackingCode.length > 120) {
       return res.status(400).json({
-        error: "O código de rastreamento deve ter no máximo 120 caracteres",
+        error:
+          "O código de rastreamento deve ter no máximo 120 caracteres",
       });
     }
 
-    if (trackingCarrier && trackingCarrier.length > 100) {
+    if (
+      trackingCarrier &&
+      trackingCarrier.length > 100
+    ) {
       return res.status(400).json({
-        error: "A transportadora deve ter no máximo 100 caracteres",
+        error:
+          "A transportadora deve ter no máximo 100 caracteres",
       });
     }
 
     if (trackingUrl && trackingUrl.length > 500) {
       return res.status(400).json({
-        error: "O link de rastreamento deve ter no máximo 500 caracteres",
+        error:
+          "O link de rastreamento deve ter no máximo 500 caracteres",
       });
     }
 
@@ -199,29 +198,95 @@ export async function updateAdminOrder(req, res) {
       });
     }
 
-    if (requestedStatus === "shipped") {
-      order.status = "shipped";
-      order.tracking_code = trackingCode;
-      order.tracking_carrier = trackingCarrier;
-      order.tracking_url = trackingUrl;
+    const result = await sequelize.transaction(
+      async (transaction) => {
+        const order = await Order.findByPk(orderId, {
+          transaction,
+          lock: transaction.LOCK.UPDATE,
+        });
 
-      if (!order.shipped_at) {
-        order.shipped_at = new Date();
-      }
-    }
+        if (!order) {
+          return {
+            status: 404,
+            body: {
+              error: "Pedido não encontrado",
+            },
+          };
+        }
 
-    if (requestedStatus === "delivered") {
-      order.status = "delivered";
-      order.delivered_at = new Date();
-    }
+        if (
+          requestedStatus === "shipped" &&
+          order.status !== "confirmed" &&
+          order.status !== "shipped"
+        ) {
+          return {
+            status: 409,
+            body: {
+              error:
+                "Somente pedidos confirmados podem ser enviados",
+            },
+          };
+        }
 
-    await order.save();
+        if (
+          requestedStatus === "delivered" &&
+          order.status !== "shipped"
+        ) {
+          return {
+            status: 409,
+            body: {
+              error:
+                "Somente pedidos enviados podem ser marcados como entregues",
+            },
+          };
+        }
 
-    const updatedOrder = await Order.findByPk(order.id, {
-      include: getOrderIncludes(),
-    });
+        if (requestedStatus === "shipped") {
+          order.status = "shipped";
+          order.tracking_code = trackingCode;
+          order.tracking_carrier = trackingCarrier;
+          order.tracking_url = trackingUrl;
 
-    return res.json(updatedOrder);
+          if (!order.shipped_at) {
+            order.shipped_at = new Date();
+          }
+        }
+
+        if (requestedStatus === "delivered") {
+          order.status = "delivered";
+
+          if (!order.delivered_at) {
+            order.delivered_at = new Date();
+          }
+        }
+
+        await order.save({
+          transaction,
+        });
+
+        if (requestedStatus === "delivered") {
+          await releaseOrderCashback({
+            order,
+            transaction,
+          });
+        }
+
+        const updatedOrder = await Order.findByPk(
+          order.id,
+          {
+            include: getOrderIncludes(),
+            transaction,
+          },
+        );
+
+        return {
+          status: 200,
+          body: updatedOrder,
+        };
+      },
+    );
+
+    return res.status(result.status).json(result.body);
   } catch (error) {
     console.error("Erro ao atualizar pedido:", error);
 

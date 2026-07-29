@@ -44,6 +44,26 @@ const Order = sequelize.define(
       allowNull: false,
       defaultValue: 0,
     },
+    cashback_eligible_amount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+    },
+    cashback_rate: {
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: false,
+      defaultValue: 0,
+    },
+    cashback_earned_amount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+    },
+    cashback_redeemed_amount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+    },
     payment_intent_id: {
       type: DataTypes.STRING(255),
       allowNull: true,
