@@ -1,6 +1,7 @@
 import { Op } from "sequelize";
 import CashbackTransaction from "../models/CashbackTransaction.js";
 import Order from "../models/Order.js";
+import CashbackAllocation from "../models/CashbackAllocation.js";
 
 export const CASHBACK_RATE = 5;
 export const CASHBACK_EXPIRATION_DAYS = 30;
@@ -189,4 +190,313 @@ export async function releaseOrderCashback({ order, transaction }) {
   });
 
   return cashbackCredit;
+}
+export async function reserveCashbackForOrder({
+  userId,
+  order,
+  requestedAmountCents,
+  maximumAmountCents,
+  transaction,
+}) {
+  if (!transaction) {
+    throw new Error(
+      "A reserva de VHX Cash deve ocorrer dentro de uma transação",
+    );
+  }
+
+  if (!Number.isSafeInteger(requestedAmountCents) || requestedAmountCents < 0) {
+    throw new Error("Valor de VHX Cash inválido");
+  }
+
+  if (!Number.isSafeInteger(maximumAmountCents) || maximumAmountCents < 0) {
+    throw new Error("Limite de VHX Cash inválido");
+  }
+
+  if (requestedAmountCents === 0) {
+    return {
+      redeemedAmountCents: 0,
+      transaction: null,
+    };
+  }
+
+  if (requestedAmountCents > maximumAmountCents) {
+    throw new Error(
+      "O VHX Cash não pode ultrapassar o valor dos produtos após o desconto",
+    );
+  }
+
+  await expireCashbackCredits({
+    userId,
+    transaction,
+  });
+
+  const credits = await CashbackTransaction.findAll({
+    where: {
+      user_id: userId,
+      type: "earned",
+      status: "available",
+      remaining_amount: {
+        [Op.gt]: 0,
+      },
+      [Op.or]: [
+        {
+          expires_at: null,
+        },
+        {
+          expires_at: {
+            [Op.gt]: new Date(),
+          },
+        },
+      ],
+    },
+    order: [
+      ["expires_at", "ASC"],
+      ["id", "ASC"],
+    ],
+    transaction,
+    lock: transaction.LOCK.UPDATE,
+  });
+
+  const availableCents = credits.reduce(
+    (total, credit) => total + moneyToCents(credit.remaining_amount),
+    0,
+  );
+
+  if (requestedAmountCents > availableCents) {
+    throw new Error("Saldo de VHX Cash insuficiente");
+  }
+
+  const redemption = await CashbackTransaction.create(
+    {
+      user_id: userId,
+      order_id: order.id,
+      type: "redeemed",
+      status: "pending",
+      amount: centsToMoney(requestedAmountCents),
+      remaining_amount: 0,
+      available_at: null,
+      expires_at: null,
+      description: `VHX Cash reservado no pedido #${order.id}`,
+    },
+    {
+      transaction,
+    },
+  );
+
+  let amountRemainingCents = requestedAmountCents;
+
+  for (const credit of credits) {
+    if (amountRemainingCents <= 0) {
+      break;
+    }
+
+    const creditRemainingCents = moneyToCents(credit.remaining_amount);
+
+    const allocatedAmountCents = Math.min(
+      creditRemainingCents,
+      amountRemainingCents,
+    );
+
+    const updatedRemainingCents = creditRemainingCents - allocatedAmountCents;
+
+    await credit.update(
+      {
+        remaining_amount: centsToMoney(updatedRemainingCents),
+        status: updatedRemainingCents === 0 ? "completed" : "available",
+      },
+      {
+        transaction,
+      },
+    );
+
+    await CashbackAllocation.create(
+      {
+        redemption_transaction_id: redemption.id,
+        credit_transaction_id: credit.id,
+        amount: centsToMoney(allocatedAmountCents),
+      },
+      {
+        transaction,
+      },
+    );
+
+    amountRemainingCents -= allocatedAmountCents;
+  }
+
+  if (amountRemainingCents !== 0) {
+    throw new Error("Não foi possível reservar todo o saldo de VHX Cash");
+  }
+
+  await order.update(
+    {
+      cashback_redeemed_amount: centsToMoney(requestedAmountCents),
+    },
+    {
+      transaction,
+    },
+  );
+
+  return {
+    redeemedAmountCents: requestedAmountCents,
+    transaction: redemption,
+  };
+}
+
+export async function confirmCashbackRedemption({ order, transaction }) {
+  const redemption = await CashbackTransaction.findOne({
+    where: {
+      order_id: order.id,
+      type: "redeemed",
+    },
+    transaction,
+    lock: transaction.LOCK.UPDATE,
+  });
+
+  if (!redemption) {
+    return null;
+  }
+
+  if (redemption.status === "completed") {
+    return redemption;
+  }
+
+  if (redemption.status !== "pending") {
+    throw new Error(
+      `O resgate do pedido ${order.id} não pode ser confirmado com status ${redemption.status}`,
+    );
+  }
+
+  await redemption.update(
+    {
+      status: "completed",
+      description: `VHX Cash utilizado no pedido #${order.id}`,
+    },
+    {
+      transaction,
+    },
+  );
+
+  return redemption;
+}
+
+export async function reverseCashbackRedemption({ order, transaction }) {
+  const redemption = await CashbackTransaction.findOne({
+    where: {
+      order_id: order.id,
+      type: "redeemed",
+    },
+    transaction,
+    lock: transaction.LOCK.UPDATE,
+  });
+
+  if (!redemption) {
+    return null;
+  }
+
+  const existingReversal = await CashbackTransaction.findOne({
+    where: {
+      order_id: order.id,
+      type: "reversed",
+    },
+    transaction,
+    lock: transaction.LOCK.UPDATE,
+  });
+
+  if (existingReversal) {
+    return existingReversal;
+  }
+
+  if (redemption.status !== "pending" && redemption.status !== "completed") {
+    return null;
+  }
+
+  const allocations = await CashbackAllocation.findAll({
+    where: {
+      redemption_transaction_id: redemption.id,
+    },
+    order: [["id", "ASC"]],
+    transaction,
+    lock: transaction.LOCK.UPDATE,
+  });
+
+  let restoredAmountCents = 0;
+
+  for (const allocation of allocations) {
+    const credit = await CashbackTransaction.findByPk(
+      allocation.credit_transaction_id,
+      {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      },
+    );
+
+    if (!credit) {
+      throw new Error(
+        `Crédito ${allocation.credit_transaction_id} não encontrado`,
+      );
+    }
+
+    const allocationCents = moneyToCents(allocation.amount);
+
+    const currentRemainingCents = moneyToCents(credit.remaining_amount);
+
+    const originalAmountCents = moneyToCents(credit.amount);
+
+    const restoredRemainingCents = currentRemainingCents + allocationCents;
+
+    if (restoredRemainingCents > originalAmountCents) {
+      throw new Error(
+        `A devolução ultrapassaria o valor do crédito ${credit.id}`,
+      );
+    }
+
+    await credit.update(
+      {
+        remaining_amount: centsToMoney(restoredRemainingCents),
+        status: "available",
+      },
+      {
+        transaction,
+      },
+    );
+
+    restoredAmountCents += allocationCents;
+  }
+
+  const redemptionAmountCents = moneyToCents(redemption.amount);
+
+  if (restoredAmountCents !== redemptionAmountCents) {
+    throw new Error(
+      `As alocações do resgate do pedido ${order.id} estão divergentes`,
+    );
+  }
+
+  await redemption.update(
+    {
+      status: "cancelled",
+      description: `Reserva de VHX Cash cancelada no pedido #${order.id}`,
+    },
+    {
+      transaction,
+    },
+  );
+
+  const reversal = await CashbackTransaction.create(
+    {
+      user_id: order.user_id,
+      order_id: order.id,
+      type: "reversed",
+      status: "completed",
+      amount: centsToMoney(restoredAmountCents),
+      remaining_amount: 0,
+      available_at: new Date(),
+      expires_at: null,
+      description: `Devolução do VHX Cash do pedido #${order.id}`,
+    },
+    {
+      transaction,
+    },
+  );
+
+  return reversal;
 }

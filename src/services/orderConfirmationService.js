@@ -1,6 +1,7 @@
 import sequelize from "../database/connection.js";
 import CouponRedemption from "../models/CouponRedemption.js";
 import Order from "../models/Order.js";
+import { confirmCashbackRedemption } from "./cashbackService.js";
 
 export async function confirmPaidOrder(paymentIntent) {
   return sequelize.transaction(async (transaction) => {
@@ -20,23 +21,16 @@ export async function confirmPaidOrder(paymentIntent) {
       return null;
     }
 
-    const expectedAmount = Math.round(
-      Number(order.total) * 100,
-    );
+    const expectedAmount = Math.round(Number(order.total) * 100);
 
     if (
       !Number.isSafeInteger(expectedAmount) ||
       paymentIntent.amount_received !== expectedAmount
     ) {
-      throw new Error(
-        `Valor divergente no pedido ${order.id}`,
-      );
+      throw new Error(`Valor divergente no pedido ${order.id}`);
     }
 
-    if (
-      order.status !== "pending" &&
-      order.status !== "confirmed"
-    ) {
+    if (order.status !== "pending" && order.status !== "confirmed") {
       console.warn(
         `Pedido ${order.id} não pode ser confirmado com status ${order.status}`,
       );
@@ -54,6 +48,11 @@ export async function confirmPaidOrder(paymentIntent) {
         },
       );
     }
+    
+    await confirmCashbackRedemption({
+      order,
+      transaction,
+    });
 
     if (order.coupon_id) {
       await CouponRedemption.findOrCreate({

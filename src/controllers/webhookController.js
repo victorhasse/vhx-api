@@ -6,6 +6,7 @@ import OrderItem from "../models/OrderItem.js";
 import Product from "../models/Product.js";
 import ProductVariant from "../models/ProductVariant.js";
 import { confirmPaidOrder } from "../services/orderConfirmationService.js";
+import { reverseCashbackRedemption } from "../services/cashbackService.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -100,7 +101,11 @@ async function cancelOrderAndRestoreStock(paymentIntent) {
         },
       );
     }
-
+    await reverseCashbackRedemption({
+      order,
+      transaction,
+    });
+    
     await order.update(
       {
         status: "cancelled",
