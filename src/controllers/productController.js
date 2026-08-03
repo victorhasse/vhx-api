@@ -238,6 +238,94 @@ export async function getById(req, res) {
   }
 }
 
+export async function getRecommendations(req, res) {
+  try {
+    const currentProduct = await Product.findOne({
+      where: {
+        id: req.params.id,
+        active: true,
+      },
+      attributes: ["id", "category"],
+    });
+
+    if (!currentProduct) {
+      return res.status(404).json({
+        error: "Produto não encontrado",
+      });
+    }
+
+    const candidates = await Product.findAll({
+      where: {
+        id: {
+          [Op.ne]: currentProduct.id,
+        },
+        category: currentProduct.category,
+        active: true,
+      },
+      attributes: ["id", "stock"],
+      order: [["createdAt", "DESC"]],
+      raw: true,
+    });
+
+    if (candidates.length === 0) {
+      return res.json([]);
+    }
+
+    const candidateIds = candidates.map((product) => product.id);
+
+    const availableVariants = await ProductVariant.findAll({
+      where: {
+        product_id: {
+          [Op.in]: candidateIds,
+        },
+        active: true,
+        stock: {
+          [Op.gt]: 0,
+        },
+      },
+      attributes: ["product_id"],
+      group: ["product_id"],
+      raw: true,
+    });
+
+    const productIdsWithAvailableVariants = new Set(
+      availableVariants.map((variant) => variant.product_id),
+    );
+
+    const availableProductIds = candidates
+      .filter(
+        (product) =>
+          Number(product.stock) > 0 ||
+          productIdsWithAvailableVariants.has(product.id),
+      )
+      .map((product) => product.id);
+
+    if (availableProductIds.length === 0) {
+      return res.json([]);
+    }
+
+    const recommendations = await Product.findAll({
+      where: {
+        id: {
+          [Op.in]: availableProductIds,
+        },
+        active: true,
+      },
+      include: getProductIncludes(),
+      order: [["createdAt", "DESC"]],
+      limit: 4,
+    });
+
+    return res.json(recommendations);
+  } catch (error) {
+    console.error("Erro ao buscar recomendações:", error);
+
+    return res.status(500).json({
+      error: "Não foi possível buscar as recomendações",
+    });
+  }
+}
+
 export async function create(req, res) {
   try {
     const payload = prepareProductPayload(req.body);

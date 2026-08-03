@@ -1,94 +1,92 @@
-import { Router } from 'express'
-import { getAll, getById, create, update, remove } from '../controllers/productController.js'
-import { authMiddleware, adminMiddleware } from '../middleware/auth.js'
+import { Router } from "express";
+import {
+  getAll,
+  getById,
+  getRecommendations,
+  create,
+  update,
+  remove,
+} from "../controllers/productController.js";
+import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 
 import {
   createColor,
   updateColor,
   removeColor,
-} from '../controllers/productColorController.js'
+} from "../controllers/productColorController.js";
 
 import {
   createImage,
   updateImage,
   removeImage,
-} from '../controllers/productImageController.js'
+} from "../controllers/productImageController.js";
 
 import {
   createVariant,
   updateVariant,
   removeVariant,
-} from '../controllers/productVariantController.js'
+} from "../controllers/productVariantController.js";
 
-const router = Router()
+const router = Router();
 
-router.post(
-  '/:productId/images',
-  authMiddleware,
-  adminMiddleware,
-  createImage
-)
+router.post("/:productId/images", authMiddleware, adminMiddleware, createImage);
 
 router.put(
-  '/:productId/images/:imageId',
+  "/:productId/images/:imageId",
   authMiddleware,
   adminMiddleware,
-  updateImage
-)
+  updateImage,
+);
 
 router.delete(
-  '/:productId/images/:imageId',
+  "/:productId/images/:imageId",
   authMiddleware,
   adminMiddleware,
-  removeImage
-)
+  removeImage,
+);
 
-router.post(
-  '/:productId/colors',
-  authMiddleware,
-  adminMiddleware,
-  createColor
-)
+router.post("/:productId/colors", authMiddleware, adminMiddleware, createColor);
 
 router.put(
-  '/:productId/colors/:colorId',
+  "/:productId/colors/:colorId",
   authMiddleware,
   adminMiddleware,
-  updateColor
-)
+  updateColor,
+);
 
 router.delete(
-  '/:productId/colors/:colorId',
+  "/:productId/colors/:colorId",
   authMiddleware,
   adminMiddleware,
-  removeColor
-)
+  removeColor,
+);
 
 router.post(
-  '/:productId/variants',
+  "/:productId/variants",
   authMiddleware,
   adminMiddleware,
-  createVariant
-)
+  createVariant,
+);
 
 router.put(
-  '/:productId/variants/:variantId',
+  "/:productId/variants/:variantId",
   authMiddleware,
   adminMiddleware,
-  updateVariant
-)
+  updateVariant,
+);
 
 router.delete(
-  '/:productId/variants/:variantId',
+  "/:productId/variants/:variantId",
   authMiddleware,
   adminMiddleware,
-  removeVariant
-)
+  removeVariant,
+);
 
-router.get('/',     getAll)
-router.get('/:id',  getById)
-router.post('/',    authMiddleware, adminMiddleware, create)
-router.put('/:id',  authMiddleware, adminMiddleware, update)
-router.delete('/:id', authMiddleware, adminMiddleware, remove)
+router.get("/", getAll);
+router.get("/:id/recommendations", getRecommendations);
+router.get("/:id", getById);
+router.post("/", authMiddleware, adminMiddleware, create);
+router.put("/:id", authMiddleware, adminMiddleware, update);
+router.delete("/:id", authMiddleware, adminMiddleware, remove);
 
-export default router
+export default router;
