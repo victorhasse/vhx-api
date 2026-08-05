@@ -1,12 +1,10 @@
-import {
-  DataTypes,
-} from 'sequelize'
+import { DataTypes } from "sequelize";
 
-import sequelize from '../database/connection.js'
-import Product from './Product.js'
+import sequelize from "../database/connection.js";
+import Product from "./Product.js";
 
 const ProductColor = sequelize.define(
-  'ProductColor',
+  "ProductColor",
   {
     id: {
       type: DataTypes.INTEGER,
@@ -18,12 +16,16 @@ const ProductColor = sequelize.define(
       allowNull: false,
       references: {
         model: Product,
-        key: 'id',
+        key: "id",
       },
     },
     name: {
       type: DataTypes.STRING(80),
       allowNull: false,
+    },
+    name_en: {
+      type: DataTypes.STRING(80),
+      allowNull: true,
     },
     slug: {
       type: DataTypes.STRING(80),
@@ -40,28 +42,25 @@ const ProductColor = sequelize.define(
     },
   },
   {
-    tableName: 'product_colors',
+    tableName: "product_colors",
     timestamps: true,
     indexes: [
       {
         unique: true,
-        fields: [
-          'product_id',
-          'slug',
-        ],
+        fields: ["product_id", "slug"],
       },
     ],
-  }
-)
+  },
+);
 
 Product.hasMany(ProductColor, {
-  foreignKey: 'product_id',
-  as: 'colors',
-})
+  foreignKey: "product_id",
+  as: "colors",
+});
 
 ProductColor.belongsTo(Product, {
-  foreignKey: 'product_id',
-  as: 'product',
-})
+  foreignKey: "product_id",
+  as: "product",
+});
 
-export default ProductColor
+export default ProductColor;

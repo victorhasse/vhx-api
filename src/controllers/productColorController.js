@@ -11,7 +11,7 @@ import {
 export async function createColor(req, res) {
   try {
     const productId = Number(req.params.productId);
-    const { name, slug, hex_code } = req.body;
+    const { name, name_en, slug, hex_code } = req.body;
 
     if (!Number.isInteger(productId) || productId <= 0) {
       return res.status(400).json({
@@ -24,6 +24,15 @@ export async function createColor(req, res) {
         error: "Nome da cor é obrigatório",
       });
     }
+
+    if (name_en !== undefined && !String(name_en).trim()) {
+      return res.status(400).json({
+        error: "O nome da cor em inglês não pode estar vazio",
+      });
+    }
+
+    const normalizedNameEn =
+      name_en === undefined ? null : String(name_en).trim();
 
     if (!hex_code || !validateHexColor(hex_code)) {
       return res.status(400).json({
@@ -69,6 +78,7 @@ export async function createColor(req, res) {
         await existingColor.update(
           {
             name: name.trim(),
+            name_en: normalizedNameEn,
             hex_code: hex_code.toUpperCase(),
             active: true,
           },
@@ -100,6 +110,7 @@ export async function createColor(req, res) {
     const color = await ProductColor.create({
       product_id: productId,
       name: name.trim(),
+      name_en: normalizedNameEn,
       slug: normalizedSlug,
       hex_code: hex_code.toUpperCase(),
       active: true,
@@ -125,7 +136,7 @@ export async function updateColor(req, res) {
   try {
     const productId = Number(req.params.productId);
     const colorId = Number(req.params.colorId);
-    const { name, slug, hex_code, active } = req.body;
+    const { name, name_en, slug, hex_code, active } = req.body;
 
     const color = await ProductColor.findOne({
       where: {
@@ -150,6 +161,18 @@ export async function updateColor(req, res) {
       }
 
       changes.name = String(name).trim();
+    }
+
+    if (name_en !== undefined) {
+      if (name_en === null) {
+        changes.name_en = null;
+      } else if (!String(name_en).trim()) {
+        return res.status(400).json({
+          error: "O nome da cor em inglês não pode estar vazio",
+        });
+      } else {
+        changes.name_en = String(name_en).trim();
+      }
     }
 
     if (slug !== undefined) {

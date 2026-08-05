@@ -48,7 +48,7 @@ function getProductIncludes() {
           model: ProductColor,
           as: "color",
           required: false,
-          attributes: ["id", "name", "slug", "hex_code"],
+          attributes: ["id", "name", "name_en", "slug", "hex_code"],
         },
       ],
     },
@@ -88,10 +88,32 @@ const shippingFields = [
   },
 ];
 
+function normalizeOptionalTranslation(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const normalizedValue = String(value).trim();
+
+  return normalizedValue || null;
+}
+
 function prepareProductPayload(body) {
   const payload = {
     ...body,
   };
+  
+  if (Object.prototype.hasOwnProperty.call(body, "name_en")) {
+    payload.name_en = normalizeOptionalTranslation(body.name_en);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "description_en")) {
+    payload.description_en = normalizeOptionalTranslation(body.description_en);
+  }
 
   for (const field of shippingFields) {
     if (!Object.prototype.hasOwnProperty.call(body, field.name)) {
@@ -171,7 +193,17 @@ export async function getAll(req, res) {
           },
         },
         {
+          name_en: {
+            [Op.iLike]: searchTerm,
+          },
+        },
+        {
           description: {
+            [Op.iLike]: searchTerm,
+          },
+        },
+        {
+          description_en: {
             [Op.iLike]: searchTerm,
           },
         },
